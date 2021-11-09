@@ -5,6 +5,7 @@ const { MongoClient } = require("mongodb");
 const port = process.env.PORT || 7000;
 require("dotenv").config();
 const Objectid = require("mongodb").ObjectId;
+var admin = require("firebase-admin");
 
 app.use(cors());
 app.use(express.json());
@@ -14,6 +15,26 @@ const client = new MongoClient(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
+
+var serviceAccount = JSON.parse(process.env.FIREBASE_IDTOKEN);
+
+const { auth } = require("firebase-admin");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+async function verifyTOKEN(req, res, next) {
+  if (req.headers.authorization.startsWith("Bearer ")) {
+    const token = req.headers.authorization.split(" ")[1];
+    try {
+      const decodedemail = await admin.auth().verifyIdToken(token);
+      req.decodedemail = decodedemail.email;
+      console.log(decodedemail);
+    } catch {}
+  }
+
+  next();
+}
 
 async function run() {
   try {
@@ -75,18 +96,25 @@ async function run() {
     });
 
     // post admin roll
-    app.put("/admin/roll", async (req, res) => {
-      // console.log(req.header.authorization);
-      console.log(req.query.email);
-      const filter = { email: req.query.email };
-
-      const updateDoc = {
-        $set: {
-          roll: req.body.roll,
-        },
-      };
-      const result = await usercollection.updateOne(filter, updateDoc);
-      res.send(result);
+    app.put("/admin/roll", verifyTOKEN, async (req, res) => {
+      console.log(req.body);
+      if (req.decodedemail) {
+        const chakingemail = await usercollection.findOne({
+          email: req.decodedemail,
+        });
+        if (chakingemail.roll === "ADMIN") {
+          const filter = { email: req.query.email };
+          const updateDoc = {
+            $set: {
+              roll: req.query.roll,
+            },
+          };
+          const result = await usercollection.updateOne(filter, updateDoc);
+          res.send(result);
+        }
+      } else {
+        res.status(401).json({ message: "not verify admin" });
+      }
     });
 
     // chakin is admin
@@ -112,3 +140,5 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log("Jerins parlur runing in port :", port);
 });
+
+// heroki project name : secret-journey-43006
